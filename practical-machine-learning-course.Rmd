@@ -1,0 +1,133 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Rene Persau"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(caret)
+library(randomForest)
+library(dplyr)
+library(ggplot2)
+set.seed(123)
+```
+
+# Executive Summary
+
+The goal of this project is to predict the manner in which six participants performed barbell lifts using sensor data collected from devices on their arm, forearm, belt, and dumbbell. The outcome variable is classe, a categorical variable with five levels (A–E). A Random Forest model was trained to perform classification. The model achieved 99.85% accuracy, indicating strong predictive performance. This report describes the methodology, preprocessing steps, model training, and validation.
+
+# Data Preprocessing
+
+The data were sourced from:
+
+Training: pml-training.csv
+Testing: pml-testing.csv
+
+```{r}
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train_raw <- read.csv(train_url, na.strings = c("NA", "", "#DIV/0!"))
+test_raw  <- read.csv(test_url, na.strings = c("NA", "", "#DIV/0!"))
+```
+
+
+
+## Cleaning Steps
+
+Removed columns with more than 95% missing values
+Dropped irrelevant metadata columns
+Kept only numeric predictors and the target variable classe
+
+### Remove mostly NA columns
+```{r}
+na_cols <- sapply(train_raw, function(x) mean(is.na(x))) < 0.95
+train_filtered <- train_raw[, na_cols]
+test_filtered  <- test_raw[, na_cols]
+```
+
+### Drop metadata columns
+```{r}
+train_filtered <- train_filtered[, -(1:5)]
+test_filtered  <- test_filtered[, -(1:5)]
+```
+
+### Keep only numeric predictors + classe
+```{r}
+train_filtered <- train_filtered %>%
+select(where(is.numeric), classe)
+```
+
+### Drop remaining NAs
+```{r}
+train_filtered <- na.omit(train_filtered)
+```
+
+# Model Training
+
+The training set was partitioned into 70% for model fitting and 30% for validation. A 3-fold cross-validated Random Forest model was trained using 100 trees for performance and speed.
+
+```{r}
+inTrain <- createDataPartition(train_filtered$classe, p = 0.7, list = FALSE)
+training <- train_filtered[inTrain, ]
+validation <- train_filtered[-inTrain, ]
+
+control <- trainControl(method = "cv", number = 3)
+
+rf_model <- train(classe ~ ., data = training, method = "rf", trControl = control, ntree = 100)
+```
+
+# Model Evaluation
+
+The Random Forest model was applied to the validation set. We ensured the prediction and reference levels matched before generating the confusion matrix.
+
+```{r}
+rf_pred <- predict(rf_model, newdata = validation)
+
+# Ensure matching factor levels
+validation$classe <- factor(validation$classe)
+rf_pred <- factor(rf_pred, levels = levels(validation$classe))
+
+# Confusion matrix
+conf_matrix <- confusionMatrix(rf_pred, validation$classe)
+print(conf_matrix)
+```
+
+Accuracy
+Accuracy: 99.85%
+Kappa: 0.9981
+High sensitivity and specificity across all classes
+
+
+# Predicting the Test Cases
+
+The final model was applied to the test set to generate 20 predictions for submission.
+
+```{r}
+predictors <- names(training)[names(training) != "classe"]
+test_filtered <- test_filtered[, predictors]
+
+final_preds <- predict(rf_model, newdata = test_filtered)
+print(final_preds)
+```
+
+[1] B A B A A E D B A A B C B A E E A B B B
+Levels: A B C D E
+
+
+# Conclusion
+
+This project demonstrated the successful application of Random Forests to classify physical activity from sensor data. The model performed extremely well, likely due to:
+
+- Strong signal in accelerometer and gyroscope data 
+- Effective data cleaning
+- The robustness of ensemble learning
+
+Future work could explore feature engineering, model interpretability techniques, and real-time application integration.
+
